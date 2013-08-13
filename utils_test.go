@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"github.com/dotcloud/docker/api"
 	"github.com/dotcloud/docker/utils"
 	"io"
 	"io/ioutil"
@@ -88,7 +89,7 @@ func readFile(src string, t *testing.T) (content string) {
 // dynamically replaced by the current test image.
 // The caller is responsible for destroying the container.
 // Call t.Fatal() at the first error.
-func mkContainer(r *Runtime, args []string, t *testing.T) (*Container, *HostConfig, error) {
+func mkContainer(r *Runtime, args []string, t *testing.T) (*Container, *api.HostConfig, error) {
 	config, hostConfig, _, err := ParseRun(args, nil)
 	defer func() {
 		if err != nil && t != nil {
@@ -143,28 +144,28 @@ func runContainer(r *Runtime, args []string, t *testing.T) (output string, err e
 func TestCompareConfig(t *testing.T) {
 	volumes1 := make(map[string]struct{})
 	volumes1["/test1"] = struct{}{}
-	config1 := Config{
+	config1 := api.Config{
 		Dns:         []string{"1.1.1.1", "2.2.2.2"},
 		PortSpecs:   []string{"1111:1111", "2222:2222"},
 		Env:         []string{"VAR1=1", "VAR2=2"},
 		VolumesFrom: "11111111",
 		Volumes:     volumes1,
 	}
-	config2 := Config{
+	config2 := api.Config{
 		Dns:         []string{"0.0.0.0", "2.2.2.2"},
 		PortSpecs:   []string{"1111:1111", "2222:2222"},
 		Env:         []string{"VAR1=1", "VAR2=2"},
 		VolumesFrom: "11111111",
 		Volumes:     volumes1,
 	}
-	config3 := Config{
+	config3 := api.Config{
 		Dns:         []string{"1.1.1.1", "2.2.2.2"},
 		PortSpecs:   []string{"0000:0000", "2222:2222"},
 		Env:         []string{"VAR1=1", "VAR2=2"},
 		VolumesFrom: "11111111",
 		Volumes:     volumes1,
 	}
-	config4 := Config{
+	config4 := api.Config{
 		Dns:         []string{"1.1.1.1", "2.2.2.2"},
 		PortSpecs:   []string{"0000:0000", "2222:2222"},
 		Env:         []string{"VAR1=1", "VAR2=2"},
@@ -173,7 +174,7 @@ func TestCompareConfig(t *testing.T) {
 	}
 	volumes2 := make(map[string]struct{})
 	volumes2["/test2"] = struct{}{}
-	config5 := Config{
+	config5 := api.Config{
 		Dns:         []string{"1.1.1.1", "2.2.2.2"},
 		PortSpecs:   []string{"0000:0000", "2222:2222"},
 		Env:         []string{"VAR1=1", "VAR2=2"},
@@ -201,7 +202,7 @@ func TestMergeConfig(t *testing.T) {
 	volumesImage := make(map[string]struct{})
 	volumesImage["/test1"] = struct{}{}
 	volumesImage["/test2"] = struct{}{}
-	configImage := &Config{
+	configImage := &api.Config{
 		Dns:         []string{"1.1.1.1", "2.2.2.2"},
 		PortSpecs:   []string{"1111:1111", "2222:2222"},
 		Env:         []string{"VAR1=1", "VAR2=2"},
@@ -211,7 +212,7 @@ func TestMergeConfig(t *testing.T) {
 
 	volumesUser := make(map[string]struct{})
 	volumesUser["/test3"] = struct{}{}
-	configUser := &Config{
+	configUser := &api.Config{
 		Dns:       []string{"3.3.3.3"},
 		PortSpecs: []string{"3333:2222", "3333:3333"},
 		Env:       []string{"VAR2=3", "VAR3=3"},
@@ -264,7 +265,7 @@ func TestMergeConfigPublicPortNotHonored(t *testing.T) {
 	volumesImage := make(map[string]struct{})
 	volumesImage["/test1"] = struct{}{}
 	volumesImage["/test2"] = struct{}{}
-	configImage := &Config{
+	configImage := &api.Config{
 		Dns:       []string{"1.1.1.1", "2.2.2.2"},
 		PortSpecs: []string{"1111", "2222"},
 		Env:       []string{"VAR1=1", "VAR2=2"},
@@ -273,7 +274,7 @@ func TestMergeConfigPublicPortNotHonored(t *testing.T) {
 
 	volumesUser := make(map[string]struct{})
 	volumesUser["/test3"] = struct{}{}
-	configUser := &Config{
+	configUser := &api.Config{
 		Dns:       []string{"3.3.3.3"},
 		PortSpecs: []string{"1111:3333"},
 		Env:       []string{"VAR2=3", "VAR3=3"},

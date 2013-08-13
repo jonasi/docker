@@ -2,6 +2,7 @@ package docker
 
 import (
 	"fmt"
+	"github.com/dotcloud/docker/api"
 	"github.com/dotcloud/docker/utils"
 	"os"
 	"path"
@@ -15,7 +16,7 @@ type Builder struct {
 	repositories *TagStore
 	graph        *Graph
 
-	config *Config
+	config *api.Config
 	image  *Image
 }
 
@@ -27,7 +28,7 @@ func NewBuilder(runtime *Runtime) *Builder {
 	}
 }
 
-func (builder *Builder) Create(config *Config) (*Container, error) {
+func (builder *Builder) Create(config *api.Config) (*Container, error) {
 	// Lookup image
 	img, err := builder.repositories.LookupImage(config.Image)
 	if err != nil {
@@ -64,16 +65,18 @@ func (builder *Builder) Create(config *Config) (*Container, error) {
 	}
 
 	container := &Container{
-		// FIXME: we should generate the ID here instead of receiving it as an argument
-		ID:              id,
-		Created:         time.Now(),
-		Path:            entrypoint,
-		Args:            args, //FIXME: de-duplicate from config
-		Config:          config,
-		Image:           img.ID, // Always use the resolved image id
-		NetworkSettings: &NetworkSettings{},
-		// FIXME: do we need to store this in the container?
-		SysInitPath: sysInitPath,
+		Container: &api.Container{
+			// FIXME: we should generate the ID here instead of receiving it as an argument
+			ID:              id,
+			Created:         time.Now(),
+			Path:            entrypoint,
+			Args:            args, //FIXME: de-duplicate from config
+			Config:          config,
+			Image:           img.ID, // Always use the resolved image id
+			NetworkSettings: &api.NetworkSettings{},
+			// FIXME: do we need to store this in the container?
+			SysInitPath: sysInitPath,
+		},
 	}
 	container.root = builder.runtime.containerRoot(container.ID)
 	// Step 1: create the container directory.
@@ -128,7 +131,7 @@ func (builder *Builder) Create(config *Config) (*Container, error) {
 
 // Commit creates a new filesystem image from the current state of a container.
 // The image can optionally be tagged into a repository
-func (builder *Builder) Commit(container *Container, repository, tag, comment, author string, config *Config) (*Image, error) {
+func (builder *Builder) Commit(container *Container, repository, tag, comment, author string, config *api.Config) (*Image, error) {
 	// FIXME: freeze the container before copying it to avoid data corruption?
 	// FIXME: this shouldn't be in commands.
 	if err := container.EnsureMounted(); err != nil {

@@ -2,6 +2,7 @@ package docker
 
 import (
 	"fmt"
+	"github.com/dotcloud/docker/api"
 	"github.com/dotcloud/docker/utils"
 	"io"
 	"io/ioutil"
@@ -94,15 +95,18 @@ func (graph *Graph) Get(name string) (*Image, error) {
 }
 
 // Create creates a new image and registers it in the graph.
-func (graph *Graph) Create(layerData Archive, container *Container, comment, author string, config *Config) (*Image, error) {
+func (graph *Graph) Create(layerData utils.Archive, container *Container, comment, author string, config *api.Config) (*Image, error) {
 	img := &Image{
-		ID:            GenerateID(),
-		Comment:       comment,
-		Created:       time.Now(),
-		DockerVersion: VERSION,
-		Author:        author,
-		Config:        config,
-		Architecture:  "x86_64",
+		&api.Image{
+			ID:            GenerateID(),
+			Comment:       comment,
+			Created:       time.Now(),
+			DockerVersion: VERSION,
+			Author:        author,
+			Config:        config,
+			Architecture:  "x86_64",
+		},
+		nil,
 	}
 	if container != nil {
 		img.Parent = container.Image
@@ -117,7 +121,7 @@ func (graph *Graph) Create(layerData Archive, container *Container, comment, aut
 
 // Register imports a pre-existing image into the graph.
 // FIXME: pass img as first argument
-func (graph *Graph) Register(jsonData []byte, layerData Archive, img *Image) error {
+func (graph *Graph) Register(jsonData []byte, layerData utils.Archive, img *Image) error {
 	if err := ValidateID(img.ID); err != nil {
 		return err
 	}
@@ -146,7 +150,7 @@ func (graph *Graph) Register(jsonData []byte, layerData Archive, img *Image) err
 //   The archive is stored on disk and will be automatically deleted as soon as has been read.
 //   If output is not nil, a human-readable progress bar will be written to it.
 //   FIXME: does this belong in Graph? How about MktempFile, let the caller use it for archives?
-func (graph *Graph) TempLayerArchive(id string, compression Compression, sf *utils.StreamFormatter, output io.Writer) (*TempArchive, error) {
+func (graph *Graph) TempLayerArchive(id string, compression utils.Compression, sf *utils.StreamFormatter, output io.Writer) (*utils.TempArchive, error) {
 	image, err := graph.Get(id)
 	if err != nil {
 		return nil, err
@@ -159,7 +163,7 @@ func (graph *Graph) TempLayerArchive(id string, compression Compression, sf *uti
 	if err != nil {
 		return nil, err
 	}
-	return NewTempArchive(utils.ProgressReader(ioutil.NopCloser(archive), 0, output, sf.FormatProgress("", "Buffering to disk", "%v/%v (%v)"), sf, true), tmp.Root)
+	return utils.NewTempArchive(utils.ProgressReader(ioutil.NopCloser(archive), 0, output, sf.FormatProgress("", "Buffering to disk", "%v/%v (%v)"), sf, true), tmp.Root)
 }
 
 // Mktemp creates a temporary sub-directory inside the graph's filesystem.

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"github.com/dotcloud/docker/api"
 	"github.com/dotcloud/docker/term"
 	"github.com/dotcloud/docker/utils"
 	"github.com/kr/pty"
@@ -14,7 +15,6 @@ import (
 	"os/exec"
 	"path"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 	"syscall"
@@ -22,67 +22,18 @@ import (
 )
 
 type Container struct {
-	root string
-
-	ID string
-
-	Created time.Time
-
-	Path string
-	Args []string
-
-	Config *Config
-	State  State
-	Image  string
-
-	network         *NetworkInterface
-	NetworkSettings *NetworkSettings
-
-	SysInitPath    string
-	ResolvConfPath string
-
+	*api.Container
+	State     State
+	root      string
+	network   *NetworkInterface
 	cmd       *exec.Cmd
 	stdout    *utils.WriteBroadcaster
 	stderr    *utils.WriteBroadcaster
 	stdin     io.ReadCloser
 	stdinPipe io.WriteCloser
 	ptyMaster io.Closer
-
-	runtime *Runtime
-
-	waitLock chan struct{}
-	Volumes  map[string]string
-	// Store rw/ro in a separate structure to preserve reverse-compatibility on-disk.
-	// Easier than migrating older container configs :)
-	VolumesRW map[string]bool
-}
-
-type Config struct {
-	Hostname        string
-	User            string
-	Memory          int64 // Memory limit (in bytes)
-	MemorySwap      int64 // Total memory usage (memory + swap); set `-1' to disable swap
-	CpuShares       int64 // CPU shares (relative weight vs. other containers)
-	AttachStdin     bool
-	AttachStdout    bool
-	AttachStderr    bool
-	PortSpecs       []string
-	Tty             bool // Attach standard streams to a tty, including stdin if it is not closed.
-	OpenStdin       bool // Open stdin
-	StdinOnce       bool // If true, close stdin after the 1 attached client disconnects.
-	Env             []string
-	Cmd             []string
-	Dns             []string
-	Image           string // Name of the image as it was passed by the operator (eg. could be symbolic)
-	Volumes         map[string]struct{}
-	VolumesFrom     string
-	Entrypoint      []string
-	NetworkDisabled bool
-}
-
-type HostConfig struct {
-	Binds           []string
-	ContainerIDFile string
+	runtime   *Runtime
+	waitLock  chan struct{}
 }
 
 type BindMap struct {
@@ -91,7 +42,7 @@ type BindMap struct {
 	Mode    string
 }
 
-func ParseRun(args []string, capabilities *Capabilities) (*Config, *HostConfig, *flag.FlagSet, error) {
+func ParseRun(args []string, capabilities *Capabilities) (*api.Config, *api.HostConfig, *flag.FlagSet, error) {
 	cmd := Subcmd("run", "[OPTIONS] IMAGE [COMMAND] [ARG...]", "Run a command in a new container")
 	if len(args) > 0 && args[0] != "--help" {
 		cmd.SetOutput(ioutil.Discard)
@@ -175,7 +126,7 @@ func ParseRun(args []string, capabilities *Capabilities) (*Config, *HostConfig, 
 		entrypoint = []string{*flEntrypoint}
 	}
 
-	config := &Config{
+	config := &api.Config{
 		Hostname:        *flHostname,
 		PortSpecs:       flPorts,
 		User:            *flUser,
@@ -195,7 +146,7 @@ func ParseRun(args []string, capabilities *Capabilities) (*Config, *HostConfig, 
 		VolumesFrom:     *flVolumesFrom,
 		Entrypoint:      entrypoint,
 	}
-	hostConfig := &HostConfig{
+	hostConfig := &api.HostConfig{
 		Binds:           binds,
 		ContainerIDFile: *flContainerIDFile,
 	}
@@ -210,29 +161,6 @@ func ParseRun(args []string, capabilities *Capabilities) (*Config, *HostConfig, 
 		config.StdinOnce = true
 	}
 	return config, hostConfig, cmd, nil
-}
-
-type PortMapping map[string]string
-
-type NetworkSettings struct {
-	IPAddress   string
-	IPPrefixLen int
-	Gateway     string
-	Bridge      string
-	PortMapping map[string]PortMapping
-}
-
-// String returns a human-readable description of the port mapping defined in the settings
-func (settings *NetworkSettings) PortMappingHuman() string {
-	var mapping []string
-	for private, public := range settings.PortMapping["Tcp"] {
-		mapping = append(mapping, fmt.Sprintf("%s->%s", public, private))
-	}
-	for private, public := range settings.PortMapping["Udp"] {
-		mapping = append(mapping, fmt.Sprintf("%s->%s/udp", public, private))
-	}
-	sort.Strings(mapping)
-	return strings.Join(mapping, ", ")
 }
 
 // Inject the io.Reader at the given path. Note: do not close the reader
@@ -281,19 +209,19 @@ func (container *Container) ToDisk() (err error) {
 	return ioutil.WriteFile(container.jsonPath(), data, 0666)
 }
 
-func (container *Container) ReadHostConfig() (*HostConfig, error) {
+func (container *Container) ReadHostConfig() (*api.HostConfig, error) {
 	data, err := ioutil.ReadFile(container.hostConfigPath())
 	if err != nil {
-		return &HostConfig{}, err
+		return &api.HostConfig{}, err
 	}
-	hostConfig := &HostConfig{}
+	hostConfig := &api.HostConfig{}
 	if err := json.Unmarshal(data, hostConfig); err != nil {
-		return &HostConfig{}, err
+		return &api.HostConfig{}, err
 	}
 	return hostConfig, nil
 }
 
-func (container *Container) SaveHostConfig(hostConfig *HostConfig) (err error) {
+func (container *Container) SaveHostConfig(hostConfig *api.HostConfig) (err error) {
 	data, err := json.Marshal(hostConfig)
 	if err != nil {
 		return
@@ -502,7 +430,7 @@ func (container *Container) Attach(stdin io.ReadCloser, stdinCloser io.Closer, s
 	})
 }
 
-func (container *Container) Start(hostConfig *HostConfig) error {
+func (container *Container) Start(hostConfig *api.HostConfig) error {
 	container.State.Lock()
 	defer container.State.Unlock()
 
@@ -701,7 +629,7 @@ func (container *Container) Start(hostConfig *HostConfig) error {
 }
 
 func (container *Container) Run() error {
-	hostConfig := &HostConfig{}
+	hostConfig := &api.HostConfig{}
 	if err := container.Start(hostConfig); err != nil {
 		return err
 	}
@@ -715,7 +643,7 @@ func (container *Container) Output() (output []byte, err error) {
 		return nil, err
 	}
 	defer pipe.Close()
-	hostConfig := &HostConfig{}
+	hostConfig := &api.HostConfig{}
 	if err := container.Start(hostConfig); err != nil {
 		return nil, err
 	}
@@ -752,9 +680,9 @@ func (container *Container) allocateNetwork() error {
 	if err != nil {
 		return err
 	}
-	container.NetworkSettings.PortMapping = make(map[string]PortMapping)
-	container.NetworkSettings.PortMapping["Tcp"] = make(PortMapping)
-	container.NetworkSettings.PortMapping["Udp"] = make(PortMapping)
+	container.NetworkSettings.PortMapping = make(map[string]api.PortMapping)
+	container.NetworkSettings.PortMapping["Tcp"] = make(api.PortMapping)
+	container.NetworkSettings.PortMapping["Udp"] = make(api.PortMapping)
 	for _, spec := range container.Config.PortSpecs {
 		nat, err := iface.AllocatePort(spec)
 		if err != nil {
@@ -779,7 +707,7 @@ func (container *Container) releaseNetwork() {
 	}
 	container.network.Release()
 	container.network = nil
-	container.NetworkSettings = &NetworkSettings{}
+	container.NetworkSettings = &api.NetworkSettings{}
 }
 
 // FIXME: replace this with a control socket within docker-init
@@ -932,7 +860,7 @@ func (container *Container) Restart(seconds int) error {
 	if err := container.Stop(seconds); err != nil {
 		return err
 	}
-	hostConfig := &HostConfig{}
+	hostConfig := &api.HostConfig{}
 	if err := container.Start(hostConfig); err != nil {
 		return err
 	}
@@ -953,23 +881,23 @@ func (container *Container) Resize(h, w int) error {
 	return term.SetWinsize(pty.Fd(), &term.Winsize{Height: uint16(h), Width: uint16(w)})
 }
 
-func (container *Container) ExportRw() (Archive, error) {
-	return Tar(container.rwPath(), Uncompressed)
+func (container *Container) ExportRw() (utils.Archive, error) {
+	return utils.Tar(container.rwPath(), utils.Uncompressed)
 }
 
 func (container *Container) RwChecksum() (string, error) {
-	rwData, err := Tar(container.rwPath(), Xz)
+	rwData, err := utils.Tar(container.rwPath(), utils.Xz)
 	if err != nil {
 		return "", err
 	}
 	return utils.HashData(rwData)
 }
 
-func (container *Container) Export() (Archive, error) {
+func (container *Container) Export() (utils.Archive, error) {
 	if err := container.EnsureMounted(); err != nil {
 		return nil, err
 	}
-	return Tar(container.RootfsPath(), Uncompressed)
+	return utils.Tar(container.RootfsPath(), utils.Uncompressed)
 }
 
 func (container *Container) WaitTimeout(timeout time.Duration) error {
@@ -1004,7 +932,7 @@ func (container *Container) Mount() error {
 	return image.Mount(container.RootfsPath(), container.rwPath())
 }
 
-func (container *Container) Changes() ([]Change, error) {
+func (container *Container) Changes() ([]api.Change, error) {
 	image, err := container.GetImage()
 	if err != nil {
 		return nil, err
@@ -1094,7 +1022,7 @@ func (container *Container) GetSize() (int64, int64) {
 	return sizeRw, sizeRootfs
 }
 
-func (container *Container) Copy(resource string) (Archive, error) {
+func (container *Container) Copy(resource string) (utils.Archive, error) {
 	if err := container.EnsureMounted(); err != nil {
 		return nil, err
 	}
@@ -1112,5 +1040,5 @@ func (container *Container) Copy(resource string) (Archive, error) {
 		filter = []string{path.Base(basePath)}
 		basePath = path.Dir(basePath)
 	}
-	return TarFilter(basePath, Uncompressed, filter)
+	return utils.TarFilter(basePath, utils.Uncompressed, filter)
 }

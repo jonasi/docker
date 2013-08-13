@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/dotcloud/docker/api"
 	"github.com/dotcloud/docker/utils"
 	"io"
 	"io/ioutil"
@@ -19,18 +20,8 @@ import (
 )
 
 type Image struct {
-	ID              string    `json:"id"`
-	Parent          string    `json:"parent,omitempty"`
-	Comment         string    `json:"comment,omitempty"`
-	Created         time.Time `json:"created"`
-	Container       string    `json:"container,omitempty"`
-	ContainerConfig Config    `json:"container_config,omitempty"`
-	DockerVersion   string    `json:"docker_version,omitempty"`
-	Author          string    `json:"author,omitempty"`
-	Config          *Config   `json:"config,omitempty"`
-	Architecture    string    `json:"architecture,omitempty"`
-	graph           *Graph
-	Size            int64
+	*api.Image
+	graph *Graph
 }
 
 func LoadImage(root string) (*Image, error) {
@@ -72,7 +63,7 @@ func LoadImage(root string) (*Image, error) {
 	return img, nil
 }
 
-func StoreImage(img *Image, jsonData []byte, layerData Archive, root string) error {
+func StoreImage(img *Image, jsonData []byte, layerData utils.Archive, root string) error {
 	// Check that root doesn't already exist
 	if _, err := os.Stat(root); err == nil {
 		return fmt.Errorf("Image %s already exists", img.ID)
@@ -89,7 +80,7 @@ func StoreImage(img *Image, jsonData []byte, layerData Archive, root string) err
 	if layerData != nil {
 		start := time.Now()
 		utils.Debugf("Start untar layer")
-		if err := Untar(layerData, layer); err != nil {
+		if err := utils.Untar(layerData, layer); err != nil {
 			return err
 		}
 		utils.Debugf("Untar time: %vs\n", time.Now().Sub(start).Seconds())
@@ -162,12 +153,12 @@ func MountAUFS(ro []string, rw string, target string) error {
 }
 
 // TarLayer returns a tar archive of the image's filesystem layer.
-func (image *Image) TarLayer(compression Compression) (Archive, error) {
+func (image *Image) TarLayer(compression utils.Compression) (utils.Archive, error) {
 	layerPath, err := image.layer()
 	if err != nil {
 		return nil, err
 	}
-	return Tar(layerPath, compression)
+	return utils.Tar(layerPath, compression)
 }
 
 func (image *Image) Mount(root, rw string) error {
@@ -193,7 +184,7 @@ func (image *Image) Mount(root, rw string) error {
 	return nil
 }
 
-func (image *Image) Changes(rw string) ([]Change, error) {
+func (image *Image) Changes(rw string) ([]api.Change, error) {
 	layers, err := image.layers()
 	if err != nil {
 		return nil, err

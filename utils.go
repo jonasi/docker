@@ -1,12 +1,13 @@
 package docker
 
 import (
+	"github.com/dotcloud/docker/api"
 	"strings"
 )
 
 // Compare two Config struct. Do not compare the "Image" nor "Hostname" fields
 // If OpenStdin is set, then it differs
-func CompareConfig(a, b *Config) bool {
+func CompareConfig(a, b *api.Config) bool {
 	if a == nil || b == nil ||
 		a.OpenStdin || b.OpenStdin {
 		return false
@@ -64,7 +65,7 @@ func CompareConfig(a, b *Config) bool {
 	return true
 }
 
-func MergeConfig(userConf, imageConf *Config) {
+func MergeConfig(userConf, imageConf *api.Config) {
 	if userConf.User == "" {
 		userConf.User = imageConf.User
 	}

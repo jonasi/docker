@@ -2,6 +2,7 @@ package docker
 
 import (
 	"fmt"
+	"github.com/dotcloud/docker/api"
 	"github.com/dotcloud/docker/utils"
 	"sync"
 	"time"
@@ -9,11 +10,7 @@ import (
 
 type State struct {
 	sync.Mutex
-	Running   bool
-	Pid       int
-	ExitCode  int
-	StartedAt time.Time
-	Ghost     bool
+	api.State
 }
 
 // String returns a human-readable description of the state

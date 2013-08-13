@@ -4,6 +4,7 @@ import (
 	"code.google.com/p/go.net/websocket"
 	"encoding/json"
 	"fmt"
+	"github.com/dotcloud/docker/api"
 	"github.com/dotcloud/docker/auth"
 	"github.com/dotcloud/docker/utils"
 	"github.com/gorilla/mux"
@@ -20,7 +21,6 @@ import (
 	"strings"
 )
 
-const APIVERSION = 1.4
 const DEFAULTHTTPHOST = "127.0.0.1"
 const DEFAULTHTTPPORT = 4243
 const DEFAULTUNIXSOCKET = "/var/run/docker.sock"
@@ -106,7 +106,7 @@ func postAuth(srv *Server, version float64, w http.ResponseWriter, r *http.Reque
 		return err
 	}
 	if status != "" {
-		b, err := json.Marshal(&APIAuth{Status: status})
+		b, err := json.Marshal(&api.Auth{Status: status})
 		if err != nil {
 			return err
 		}
@@ -193,7 +193,7 @@ func getInfo(srv *Server, version float64, w http.ResponseWriter, r *http.Reques
 }
 
 func getEvents(srv *Server, version float64, w http.ResponseWriter, r *http.Request, vars map[string]string) error {
-	sendEvent := func(wf *utils.WriteFlusher, event *utils.JSONMessage) error {
+	sendEvent := func(wf *utils.WriteFlusher, event *api.JSONMessage) error {
 		b, err := json.Marshal(event)
 		if err != nil {
 			return fmt.Errorf("JSON error")
@@ -213,7 +213,7 @@ func getEvents(srv *Server, version float64, w http.ResponseWriter, r *http.Requ
 	if err := parseForm(r); err != nil {
 		return err
 	}
-	listener := make(chan utils.JSONMessage)
+	listener := make(chan api.JSONMessage)
 	srv.Lock()
 	srv.listeners[r.RemoteAddr] = listener
 	srv.Unlock()
@@ -361,7 +361,7 @@ func postCommit(srv *Server, version float64, w http.ResponseWriter, r *http.Req
 	if err := parseForm(r); err != nil {
 		return err
 	}
-	config := &Config{}
+	config := &api.Config{}
 	if err := json.NewDecoder(r.Body).Decode(config); err != nil {
 		utils.Debugf("%s", err)
 	}
@@ -374,7 +374,7 @@ func postCommit(srv *Server, version float64, w http.ResponseWriter, r *http.Req
 	if err != nil {
 		return err
 	}
-	b, err := json.Marshal(&APIID{id})
+	b, err := json.Marshal(&api.ID{id})
 	if err != nil {
 		return err
 	}
@@ -458,7 +458,7 @@ func postImagesInsert(srv *Server, version float64, w http.ResponseWriter, r *ht
 			return nil
 		}
 	}
-	b, err := json.Marshal(&APIID{ID: imgID})
+	b, err := json.Marshal(&api.ID{ID: imgID})
 	if err != nil {
 		return err
 	}
@@ -494,8 +494,8 @@ func postImagesPush(srv *Server, version float64, w http.ResponseWriter, r *http
 }
 
 func postContainersCreate(srv *Server, version float64, w http.ResponseWriter, r *http.Request, vars map[string]string) error {
-	config := &Config{}
-	out := &APIRun{}
+	config := &api.Config{}
+	out := &api.Run{}
 
 	if err := json.NewDecoder(r.Body).Decode(config); err != nil {
 		return err
@@ -608,7 +608,7 @@ func deleteImages(srv *Server, version float64, w http.ResponseWriter, r *http.R
 }
 
 func postContainersStart(srv *Server, version float64, w http.ResponseWriter, r *http.Request, vars map[string]string) error {
-	hostConfig := &HostConfig{}
+	hostConfig := &api.HostConfig{}
 
 	// allow a nil body for backwards compatibility
 	if r.Body != nil {
@@ -660,7 +660,7 @@ func postContainersWait(srv *Server, version float64, w http.ResponseWriter, r *
 	if err != nil {
 		return err
 	}
-	b, err := json.Marshal(&APIWait{StatusCode: status})
+	b, err := json.Marshal(&api.Wait{StatusCode: status})
 	if err != nil {
 		return err
 	}
@@ -834,7 +834,7 @@ func getImagesByName(srv *Server, version float64, w http.ResponseWriter, r *htt
 }
 
 func postImagesGetCache(srv *Server, version float64, w http.ResponseWriter, r *http.Request, vars map[string]string) error {
-	apiConfig := &APIImageConfig{}
+	apiConfig := &api.ImageConfig{}
 	if err := json.NewDecoder(r.Body).Decode(apiConfig); err != nil {
 		return err
 	}
@@ -847,7 +847,7 @@ func postImagesGetCache(srv *Server, version float64, w http.ResponseWriter, r *
 		w.WriteHeader(http.StatusNotFound)
 		return nil
 	}
-	apiID := &APIID{ID: image.ID}
+	apiID := &api.ID{ID: image.ID}
 	b, err := json.Marshal(apiID)
 	if err != nil {
 		return err
@@ -884,7 +884,7 @@ func postBuild(srv *Server, version float64, w http.ResponseWriter, r *http.Requ
 			return fmt.Errorf("Error trying to use git: %s (%s)", err, output)
 		}
 
-		c, err := Tar(root, Bzip2)
+		c, err := utils.Tar(root, utils.Bzip2)
 		if err != nil {
 			return err
 		}
@@ -933,7 +933,7 @@ func postContainersCopy(srv *Server, version float64, w http.ResponseWriter, r *
 	}
 	name := vars["name"]
 
-	copyData := &APICopy{}
+	copyData := &api.Copy{}
 	contentType := r.Header.Get("Content-Type")
 	if contentType == "application/json" {
 		if err := json.NewDecoder(r.Body).Decode(copyData); err != nil {
@@ -984,13 +984,13 @@ func makeHttpHandler(srv *Server, logging bool, localMethod string, localRoute s
 		}
 		version, err := strconv.ParseFloat(mux.Vars(r)["version"], 64)
 		if err != nil {
-			version = APIVERSION
+			version = api.VERSION
 		}
 		if srv.enableCors {
 			writeCorsHeaders(w, r)
 		}
 
-		if version == 0 || version > APIVERSION {
+		if version == 0 || version > api.VERSION {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}

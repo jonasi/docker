@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"github.com/dotcloud/docker/api"
 	"github.com/dotcloud/docker/utils"
 	"io"
 	"io/ioutil"
@@ -28,7 +29,7 @@ type buildFile struct {
 
 	image        string
 	maintainer   string
-	config       *Config
+	config       *api.Config
 	context      string
 	verbose      bool
 	utilizeCache bool
@@ -68,7 +69,7 @@ func (b *buildFile) CmdFrom(name string) error {
 		}
 	}
 	b.image = image.ID
-	b.config = &Config{}
+	b.config = &api.Config{}
 	if b.config.Env == nil || len(b.config.Env) == 0 {
 		b.config.Env = append(b.config.Env, "HOME=/", "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
 	}
@@ -286,17 +287,17 @@ func (b *buildFile) addContext(container *Container, orig, dest string) error {
 		return err
 	}
 	if fi.IsDir() {
-		if err := CopyWithTar(origPath, destPath); err != nil {
+		if err := utils.CopyWithTar(origPath, destPath); err != nil {
 			return err
 		}
 		// First try to unpack the source as an archive
-	} else if err := UntarPath(origPath, destPath); err != nil {
+	} else if err := utils.UntarPath(origPath, destPath); err != nil {
 		utils.Debugf("Couldn't untar %s to %s: %s", origPath, destPath, err)
 		// If that fails, just copy it as a regular file
 		if err := os.MkdirAll(path.Dir(destPath), 0755); err != nil {
 			return err
 		}
-		if err := CopyWithTar(origPath, destPath); err != nil {
+		if err := utils.CopyWithTar(origPath, destPath); err != nil {
 			return err
 		}
 	}
@@ -374,7 +375,7 @@ func (b *buildFile) run() (string, error) {
 	c.Args = b.config.Cmd[1:]
 
 	//start the container
-	hostConfig := &HostConfig{}
+	hostConfig := &api.HostConfig{}
 	if err := c.Start(hostConfig); err != nil {
 		return "", err
 	}
@@ -456,7 +457,7 @@ func (b *buildFile) Build(context io.Reader) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if err := Untar(context, name); err != nil {
+	if err := utils.Untar(context, name); err != nil {
 		return "", err
 	}
 	defer os.RemoveAll(name)
@@ -517,7 +518,7 @@ func NewBuildFile(srv *Server, out io.Writer, verbose, utilizeCache bool) BuildF
 		builder:       NewBuilder(srv.runtime),
 		runtime:       srv.runtime,
 		srv:           srv,
-		config:        &Config{},
+		config:        &api.Config{},
 		out:           out,
 		tmpContainers: make(map[string]struct{}),
 		tmpImages:     make(map[string]struct{}),

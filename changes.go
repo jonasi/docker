@@ -1,40 +1,14 @@
 package docker
 
 import (
-	"fmt"
+	"github.com/dotcloud/docker/api"
 	"os"
 	"path/filepath"
 	"strings"
 )
 
-type ChangeType int
-
-const (
-	ChangeModify = iota
-	ChangeAdd
-	ChangeDelete
-)
-
-type Change struct {
-	Path string
-	Kind ChangeType
-}
-
-func (change *Change) String() string {
-	var kind string
-	switch change.Kind {
-	case ChangeModify:
-		kind = "C"
-	case ChangeAdd:
-		kind = "A"
-	case ChangeDelete:
-		kind = "D"
-	}
-	return fmt.Sprintf("%s %s", kind, change.Path)
-}
-
-func Changes(layers []string, rw string) ([]Change, error) {
-	var changes []Change
+func Changes(layers []string, rw string) ([]api.Change, error) {
+	var changes []api.Change
 	err := filepath.Walk(rw, func(path string, f os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -57,7 +31,7 @@ func Changes(layers []string, rw string) ([]Change, error) {
 			return err
 		}
 
-		change := Change{
+		change := api.Change{
 			Path: path,
 		}
 
@@ -67,10 +41,10 @@ func Changes(layers []string, rw string) ([]Change, error) {
 		if strings.HasPrefix(file, ".wh.") {
 			originalFile := file[len(".wh."):]
 			change.Path = filepath.Join(filepath.Dir(path), originalFile)
-			change.Kind = ChangeDelete
+			change.Kind = api.ChangeDelete
 		} else {
 			// Otherwise, the file was added
-			change.Kind = ChangeAdd
+			change.Kind = api.ChangeAdd
 
 			// ...Unless it already existed in a top layer, in which case, it's a modification
 			for _, layer := range layers {
@@ -89,7 +63,7 @@ func Changes(layers []string, rw string) ([]Change, error) {
 							return nil
 						}
 					}
-					change.Kind = ChangeModify
+					change.Kind = api.ChangeModify
 					break
 				}
 			}

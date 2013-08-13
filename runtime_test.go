@@ -3,6 +3,7 @@ package docker
 import (
 	"bytes"
 	"fmt"
+	"github.com/dotcloud/docker/api"
 	"github.com/dotcloud/docker/utils"
 	"io"
 	"log"
@@ -144,7 +145,7 @@ func TestRuntimeCreate(t *testing.T) {
 
 	builder := NewBuilder(runtime)
 
-	container, err := builder.Create(&Config{
+	container, err := builder.Create(&api.Config{
 		Image: GetTestImage(runtime).ID,
 		Cmd:   []string{"ls", "-al"},
 	},
@@ -186,7 +187,7 @@ func TestRuntimeCreate(t *testing.T) {
 
 	// Make sure crete with bad parameters returns an error
 	_, err = builder.Create(
-		&Config{
+		&api.Config{
 			Image: GetTestImage(runtime).ID,
 		},
 	)
@@ -195,7 +196,7 @@ func TestRuntimeCreate(t *testing.T) {
 	}
 
 	_, err = builder.Create(
-		&Config{
+		&api.Config{
 			Image: GetTestImage(runtime).ID,
 			Cmd:   []string{},
 		},
@@ -208,7 +209,7 @@ func TestRuntimeCreate(t *testing.T) {
 func TestDestroy(t *testing.T) {
 	runtime := mkRuntime(t)
 	defer nuke(runtime)
-	container, err := NewBuilder(runtime).Create(&Config{
+	container, err := NewBuilder(runtime).Create(&api.Config{
 		Image: GetTestImage(runtime).ID,
 		Cmd:   []string{"ls", "-al"},
 	},
@@ -294,7 +295,7 @@ func startEchoServerContainer(t *testing.T, proto string) (*Runtime, *Container,
 			t.Fatal(fmt.Errorf("Unknown protocol %v", proto))
 		}
 		t.Log("Trying port", strPort)
-		container, err = NewBuilder(runtime).Create(&Config{
+		container, err = NewBuilder(runtime).Create(&api.Config{
 			Image:     GetTestImage(runtime).ID,
 			Cmd:       []string{"sh", "-c", cmd},
 			PortSpecs: []string{fmt.Sprintf("%s/%s", strPort, proto)},
@@ -309,7 +310,7 @@ func startEchoServerContainer(t *testing.T, proto string) (*Runtime, *Container,
 		t.Logf("Port %v already in use", strPort)
 	}
 
-	hostConfig := &HostConfig{}
+	hostConfig := &api.HostConfig{}
 	if err := container.Start(hostConfig); err != nil {
 		nuke(runtime)
 		t.Fatal(err)
@@ -425,7 +426,7 @@ func TestRestore(t *testing.T) {
 	defer runtime1.Destroy(container2)
 
 	// Start the container non blocking
-	hostConfig := &HostConfig{}
+	hostConfig := &api.HostConfig{}
 	if err := container2.Start(hostConfig); err != nil {
 		t.Fatal(err)
 	}

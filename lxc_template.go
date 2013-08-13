@@ -1,6 +1,7 @@
 package docker
 
 import (
+	"github.com/dotcloud/docker/api"
 	"text/template"
 )
 
@@ -116,7 +117,7 @@ lxc.cgroup.cpu.shares = {{.Config.CpuShares}}
 
 var LxcTemplateCompiled *template.Template
 
-func getMemorySwap(config *Config) int64 {
+func getMemorySwap(config *api.Config) int64 {
 	// By default, MemorySwap is set to twice the size of RAM.
 	// If you want to omit MemorySwap, set it to `-1'.
 	if config.MemorySwap < 0 {
