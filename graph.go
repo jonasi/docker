@@ -2,7 +2,6 @@ package docker
 
 import (
 	"fmt"
-	"github.com/dotcloud/docker/api"
 	"github.com/dotcloud/docker/utils"
 	"io"
 	"io/ioutil"
@@ -95,18 +94,15 @@ func (graph *Graph) Get(name string) (*Image, error) {
 }
 
 // Create creates a new image and registers it in the graph.
-func (graph *Graph) Create(layerData utils.Archive, container *Container, comment, author string, config *api.Config) (*Image, error) {
+func (graph *Graph) Create(layerData utils.Archive, container *Container, comment, author string, config *Config) (*Image, error) {
 	img := &Image{
-		&api.Image{
-			ID:            GenerateID(),
-			Comment:       comment,
-			Created:       time.Now(),
-			DockerVersion: VERSION,
-			Author:        author,
-			Config:        config,
-			Architecture:  "x86_64",
-		},
-		nil,
+		ID:            GenerateID(),
+		Comment:       comment,
+		Created:       time.Now(),
+		DockerVersion: VERSION,
+		Author:        author,
+		Config:        config,
+		Architecture:  "x86_64",
 	}
 	if container != nil {
 		img.Parent = container.Image

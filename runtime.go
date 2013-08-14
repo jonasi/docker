@@ -3,7 +3,6 @@ package docker
 import (
 	"container/list"
 	"fmt"
-	"github.com/dotcloud/docker/api"
 	"github.com/dotcloud/docker/utils"
 	"io"
 	"io/ioutil"
@@ -143,7 +142,7 @@ func (runtime *Runtime) Register(container *Container) error {
 				utils.Debugf("Restarting")
 				container.State.Ghost = false
 				container.State.setStopped(0)
-				hostConfig := &api.HostConfig{}
+				hostConfig := &HostConfig{}
 				if err := container.Start(hostConfig); err != nil {
 					return err
 				}

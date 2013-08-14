@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/dotcloud/docker/api"
 	"github.com/dotcloud/docker/auth"
 	"github.com/dotcloud/docker/registry"
 	"github.com/dotcloud/docker/utils"
@@ -23,8 +22,8 @@ import (
 	"time"
 )
 
-func (srv *Server) DockerVersion() api.Version {
-	return api.Version{
+func (srv *Server) DockerVersion() APIVersion {
+	return APIVersion{
 		Version:   VERSION,
 		GitCommit: GITCOMMIT,
 		GoVersion: runtime.Version(),
@@ -102,7 +101,7 @@ func (srv *Server) ContainerExport(name string, out io.Writer) error {
 	return fmt.Errorf("No such container: %s", name)
 }
 
-func (srv *Server) ImagesSearch(term string) ([]api.Search, error) {
+func (srv *Server) ImagesSearch(term string) ([]APISearch, error) {
 	r, err := registry.NewRegistry(srv.runtime.root, nil, srv.HTTPRequestFactory())
 	if err != nil {
 		return nil, err
@@ -112,9 +111,9 @@ func (srv *Server) ImagesSearch(term string) ([]api.Search, error) {
 		return nil, err
 	}
 
-	var outs []api.Search
+	var outs []APISearch
 	for _, repo := range results.Results {
-		var out api.Search
+		var out APISearch
 		out.Description = repo["description"]
 		out.Name = repo["name"]
 		outs = append(outs, out)
@@ -196,7 +195,7 @@ func (srv *Server) ImagesViz(out io.Writer) error {
 	return nil
 }
 
-func (srv *Server) Images(all bool, filter string) ([]api.Images, error) {
+func (srv *Server) Images(all bool, filter string) ([]APIImages, error) {
 	var (
 		allImages map[string]*Image
 		err       error
@@ -209,13 +208,13 @@ func (srv *Server) Images(all bool, filter string) ([]api.Images, error) {
 	if err != nil {
 		return nil, err
 	}
-	outs := []api.Images{} //produce [] when empty instead of 'null'
+	outs := []APIImages{} //produce [] when empty instead of 'null'
 	for name, repository := range srv.runtime.repositories.Repositories {
 		if filter != "" && name != filter {
 			continue
 		}
 		for tag, id := range repository {
-			var out api.Images
+			var out APIImages
 			image, err := srv.runtime.graph.Get(id)
 			if err != nil {
 				log.Printf("Warning: couldn't load %s from %s/%s: %s", id, name, tag, err)
@@ -234,7 +233,7 @@ func (srv *Server) Images(all bool, filter string) ([]api.Images, error) {
 	// Display images which aren't part of a
 	if filter == "" {
 		for _, image := range allImages {
-			var out api.Images
+			var out APIImages
 			out.ID = image.ID
 			out.Created = image.Created.Unix()
 			out.Size = image.Size
@@ -245,7 +244,7 @@ func (srv *Server) Images(all bool, filter string) ([]api.Images, error) {
 	return outs, nil
 }
 
-func (srv *Server) DockerInfo() *api.Info {
+func (srv *Server) DockerInfo() *APIInfo {
 	images, _ := srv.runtime.graph.All()
 	var imgcount int
 	if images == nil {
@@ -265,7 +264,7 @@ func (srv *Server) DockerInfo() *api.Info {
 		kernelVersion = kv.String()
 	}
 
-	return &api.Info{
+	return &APIInfo{
 		Containers:         len(srv.runtime.List()),
 		Images:             imgcount,
 		MemoryLimit:        srv.runtime.capabilities.MemoryLimit,
@@ -281,7 +280,7 @@ func (srv *Server) DockerInfo() *api.Info {
 	}
 }
 
-func (srv *Server) ImageHistory(name string) ([]api.History, error) {
+func (srv *Server) ImageHistory(name string) ([]APIHistory, error) {
 	image, err := srv.runtime.repositories.LookupImage(name)
 	if err != nil {
 		return nil, err
@@ -298,9 +297,9 @@ func (srv *Server) ImageHistory(name string) ([]api.History, error) {
 		}
 	}
 
-	outs := []api.History{} //produce [] when empty instead of 'null'
+	outs := []APIHistory{} //produce [] when empty instead of 'null'
 	err = image.WalkHistory(func(img *Image) error {
-		var out api.History
+		var out APIHistory
 		out.ID = srv.runtime.repositories.ImageName(img.ShortID())
 		out.Created = img.Created.Unix()
 		out.CreatedBy = strings.Join(img.ContainerConfig.Cmd, " ")
@@ -312,13 +311,13 @@ func (srv *Server) ImageHistory(name string) ([]api.History, error) {
 
 }
 
-func (srv *Server) ContainerTop(name, ps_args string) (*api.Top, error) {
+func (srv *Server) ContainerTop(name, ps_args string) (*APITop, error) {
 	if container := srv.runtime.Get(name); container != nil {
 		output, err := exec.Command("lxc-ps", "--name", container.ID, "--", ps_args).CombinedOutput()
 		if err != nil {
 			return nil, fmt.Errorf("Error trying to use lxc-ps: %s (%s)", err, output)
 		}
-		procs := api.Top{}
+		procs := APITop{}
 		for i, line := range strings.Split(string(output), "\n") {
 			if len(line) == 0 {
 				continue
@@ -345,17 +344,17 @@ func (srv *Server) ContainerTop(name, ps_args string) (*api.Top, error) {
 	return nil, fmt.Errorf("No such container: %s", name)
 }
 
-func (srv *Server) ContainerChanges(name string) ([]api.Change, error) {
+func (srv *Server) ContainerChanges(name string) ([]Change, error) {
 	if container := srv.runtime.Get(name); container != nil {
 		return container.Changes()
 	}
 	return nil, fmt.Errorf("No such container: %s", name)
 }
 
-func (srv *Server) Containers(all, size bool, n int, since, before string) []api.Containers {
+func (srv *Server) Containers(all, size bool, n int, since, before string) []APIContainers {
 	var foundBefore bool
 	var displayed int
-	retContainers := []api.Containers{}
+	retContainers := []APIContainers{}
 
 	for _, container := range srv.runtime.List() {
 		if !container.State.Running && !all && n == -1 && since == "" && before == "" {
@@ -378,7 +377,7 @@ func (srv *Server) Containers(all, size bool, n int, since, before string) []api
 		}
 		displayed++
 
-		c := api.Containers{
+		c := APIContainers{
 			ID: container.ID,
 		}
 		c.Image = srv.runtime.repositories.ImageName(container.Image)
@@ -394,7 +393,7 @@ func (srv *Server) Containers(all, size bool, n int, since, before string) []api
 	return retContainers
 }
 
-func (srv *Server) ContainerCommit(name, repo, tag, author, comment string, config *api.Config) (string, error) {
+func (srv *Server) ContainerCommit(name, repo, tag, author, comment string, config *Config) (string, error) {
 	container := srv.runtime.Get(name)
 	if container == nil {
 		return "", fmt.Errorf("No such container: %s", name)
@@ -812,7 +811,7 @@ func (srv *Server) ImageImport(src, repo, tag string, in io.Reader, out io.Write
 	return nil
 }
 
-func (srv *Server) ContainerCreate(config *api.Config) (string, error) {
+func (srv *Server) ContainerCreate(config *Config) (string, error) {
 
 	if config.Memory != 0 && config.Memory < 524288 {
 		return "", fmt.Errorf("Memory limit must be given in bytes (minimum 524288 bytes)")
@@ -892,7 +891,7 @@ func (srv *Server) ContainerDestroy(name string, removeVolume bool) error {
 
 var ErrImageReferenced = errors.New("Image referenced by a repository")
 
-func (srv *Server) deleteImageAndChildren(id string, imgs *[]api.Rmi) error {
+func (srv *Server) deleteImageAndChildren(id string, imgs *[]APIRmi) error {
 	// If the image is referenced by a repo, do not delete
 	if len(srv.runtime.repositories.ByID()[id]) != 0 {
 		return ErrImageReferenced
@@ -928,14 +927,14 @@ func (srv *Server) deleteImageAndChildren(id string, imgs *[]api.Rmi) error {
 		if err != nil {
 			return err
 		}
-		*imgs = append(*imgs, api.Rmi{Deleted: utils.TruncateID(id)})
+		*imgs = append(*imgs, APIRmi{Deleted: utils.TruncateID(id)})
 		srv.LogEvent("delete", utils.TruncateID(id))
 		return nil
 	}
 	return nil
 }
 
-func (srv *Server) deleteImageParents(img *Image, imgs *[]api.Rmi) error {
+func (srv *Server) deleteImageParents(img *Image, imgs *[]APIRmi) error {
 	if img.Parent != "" {
 		parent, err := srv.runtime.graph.Get(img.Parent)
 		if err != nil {
@@ -950,8 +949,8 @@ func (srv *Server) deleteImageParents(img *Image, imgs *[]api.Rmi) error {
 	return nil
 }
 
-func (srv *Server) deleteImage(img *Image, repoName, tag string) ([]api.Rmi, error) {
-	imgs := []api.Rmi{}
+func (srv *Server) deleteImage(img *Image, repoName, tag string) ([]APIRmi, error) {
+	imgs := []APIRmi{}
 
 	//If delete by id, see if the id belong only to one repository
 	if strings.Contains(img.ID, repoName) && tag == "" {
@@ -975,7 +974,7 @@ func (srv *Server) deleteImage(img *Image, repoName, tag string) ([]api.Rmi, err
 		return nil, err
 	}
 	if tagDeleted {
-		imgs = append(imgs, api.Rmi{Untagged: img.ShortID()})
+		imgs = append(imgs, APIRmi{Untagged: img.ShortID()})
 		srv.LogEvent("untag", img.ShortID())
 	}
 	if len(srv.runtime.repositories.ByID()[img.ID]) == 0 {
@@ -992,7 +991,7 @@ func (srv *Server) deleteImage(img *Image, repoName, tag string) ([]api.Rmi, err
 	return imgs, nil
 }
 
-func (srv *Server) ImageDelete(name string, autoPrune bool) ([]api.Rmi, error) {
+func (srv *Server) ImageDelete(name string, autoPrune bool) ([]APIRmi, error) {
 	img, err := srv.runtime.repositories.LookupImage(name)
 	if err != nil {
 		return nil, fmt.Errorf("No such image: %s", name)
@@ -1008,7 +1007,7 @@ func (srv *Server) ImageDelete(name string, autoPrune bool) ([]api.Rmi, error) {
 	return srv.deleteImage(img, name, tag)
 }
 
-func (srv *Server) ImageGetCached(imgID string, config *api.Config) (*Image, error) {
+func (srv *Server) ImageGetCached(imgID string, config *Config) (*Image, error) {
 
 	// Retrieve all images
 	images, err := srv.runtime.graph.All()
@@ -1038,7 +1037,7 @@ func (srv *Server) ImageGetCached(imgID string, config *api.Config) (*Image, err
 	return nil, nil
 }
 
-func (srv *Server) ContainerStart(name string, hostConfig *api.HostConfig) error {
+func (srv *Server) ContainerStart(name string, hostConfig *HostConfig) error {
 	if container := srv.runtime.Get(name); container != nil {
 		if err := container.Start(hostConfig); err != nil {
 			return fmt.Errorf("Error starting container %s: %s", name, err)
@@ -1206,8 +1205,8 @@ func NewServer(flGraphPath string, autoRestart, enableCors bool, dns ListOpts) (
 		enableCors:  enableCors,
 		pullingPool: make(map[string]struct{}),
 		pushingPool: make(map[string]struct{}),
-		events:      make([]api.JSONMessage, 0, 64), //only keeps the 64 last events
-		listeners:   make(map[string]chan api.JSONMessage),
+		events:      make([]utils.JSONMessage, 0, 64), //only keeps the 64 last events
+		listeners:   make(map[string]chan utils.JSONMessage),
 		reqFactory:  nil,
 	}
 	runtime.srv = srv
@@ -1225,7 +1224,7 @@ func (srv *Server) HTTPRequestFactory() *utils.HTTPRequestFactory {
 
 func (srv *Server) LogEvent(action, id string) {
 	now := time.Now().Unix()
-	jm := api.JSONMessage{Status: action, ID: id, Time: now}
+	jm := utils.JSONMessage{Status: action, ID: id, Time: now}
 	srv.events = append(srv.events, jm)
 	for _, c := range srv.listeners {
 		select { // non blocking channel
@@ -1241,7 +1240,7 @@ type Server struct {
 	enableCors  bool
 	pullingPool map[string]struct{}
 	pushingPool map[string]struct{}
-	events      []api.JSONMessage
-	listeners   map[string]chan api.JSONMessage
+	events      []utils.JSONMessage
+	listeners   map[string]chan utils.JSONMessage
 	reqFactory  *utils.HTTPRequestFactory
 }

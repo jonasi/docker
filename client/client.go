@@ -5,7 +5,7 @@ import (
     "bytes"
     "encoding/json"
     "fmt"
-	"github.com/dotcloud/docker/api"
+	"github.com/dotcloud/docker"
 	"github.com/dotcloud/docker/auth"
 	"github.com/dotcloud/docker/utils"
 	"github.com/dotcloud/docker/term"
@@ -20,7 +20,7 @@ import (
     "strings"
 )
 
-type JSONReader func(*api.JSONMessage) error
+type JSONReader func(*utils.JSONMessage) error
 
 func NewClient(proto, addr string) *Client {
     configFile, _ := auth.LoadConfig(os.Getenv("HOME"))
@@ -165,7 +165,7 @@ func (c *Client) Authenticate(username, password, email string) (string, error) 
 		return "", err
 	}
 
-	var out2 api.Auth
+	var out2 docker.APIAuth
 	err = json.Unmarshal(body, &out2)
 	if err != nil {
 		c.configFile, _ = auth.LoadConfig(os.Getenv("HOME"))
@@ -175,13 +175,13 @@ func (c *Client) Authenticate(username, password, email string) (string, error) 
     return out2.Status, nil
 }
 
-func (c *Client) Info() (*api.Info, error) {
+func (c *Client) Info() (*docker.APIInfo, error) {
 	body, _, err := c.call("GET", "/info", nil)
 	if err != nil {
 		return nil, err
 	}
 
-	var out api.Info
+	var out docker.APIInfo
 	if err := json.Unmarshal(body, &out); err != nil {
 		return nil, err
 	}
@@ -189,13 +189,13 @@ func (c *Client) Info() (*api.Info, error) {
     return &out, nil
 }
 
-func (c *Client) Version() (*api.Version, error) {
+func (c *Client) Version() (*docker.APIVersion, error) {
 	body, _, err := c.call("GET", "/version", nil)
 	if err != nil {
 		return nil, err
 	}
 
-	var out api.Version
+	var out docker.APIVersion
 	if err = json.Unmarshal(body, &out); err != nil {
         return nil, err
     }
@@ -203,7 +203,7 @@ func (c *Client) Version() (*api.Version, error) {
     return &out, nil
 }
 
-func (c *Client) Commit(container, repo, tag, comment, author string, config *api.Config) (string, error){
+func (c *Client) Commit(container, repo, tag, comment, author string, config *docker.Config) (string, error){
 	v := url.Values{}
 	v.Set("container", container)
 	v.Set("repo", repo)
@@ -216,7 +216,7 @@ func (c *Client) Commit(container, repo, tag, comment, author string, config *ap
 		return "", err
 	}
 
-	id := &api.ID{}
+	id := &docker.APIID{}
 	err = json.Unmarshal(body, id)
 	if err != nil {
 		return "", err
@@ -224,7 +224,7 @@ func (c *Client) Commit(container, repo, tag, comment, author string, config *ap
     return id.ID, nil
 }
 
-func (c *Client) ContainerList(size bool, all bool, limit int, since string, before string) ([]api.Containers, error) {
+func (c *Client) ContainerList(size bool, all bool, limit int, since string, before string) ([]docker.APIContainers, error) {
 	v := url.Values{}
 
 	if all {
@@ -248,7 +248,7 @@ func (c *Client) ContainerList(size bool, all bool, limit int, since string, bef
 		return nil, err
 	}
 
-	var outs []api.Containers
+	var outs []docker.APIContainers
 	err = json.Unmarshal(body, &outs)
 	if err != nil {
 		return nil, err
@@ -256,14 +256,14 @@ func (c *Client) ContainerList(size bool, all bool, limit int, since string, bef
 	return outs, nil
 }
 
-func (c *Client) ContainerCreate(config *api.Config) (*api.Run, error) {
+func (c *Client) ContainerCreate(config *docker.Config) (*docker.APIRun, error) {
 	//create the container
 	body, _, err := c.call("POST", "/containers/create", config)
     if err != nil {
         return nil, err
     }
 
-	runResult := &api.Run{}
+	runResult := &docker.APIRun{}
 	err = json.Unmarshal(body, runResult)
 	if err != nil {
 		return nil, err
@@ -272,13 +272,13 @@ func (c *Client) ContainerCreate(config *api.Config) (*api.Run, error) {
     return runResult, err
 }
 
-func (c *Client) ContainerInspect(cid string) (*api.Container, error) {
+func (c *Client) ContainerInspect(cid string) (*docker.Container, error) {
     body, _, err := c.call("GET", "/containers/"+cid+"/json", nil)
     if err != nil {
         return nil, err
     }
 
-	container := &api.Container{}
+	container := &docker.Container{}
 	err = json.Unmarshal(body, container)
 	if err != nil {
 		return nil, err
@@ -287,7 +287,7 @@ func (c *Client) ContainerInspect(cid string) (*api.Container, error) {
     return container, nil
 }
 
-func (c *Client) ContainerTop(cid string, args ...string) (*api.Top, error) {
+func (c *Client) ContainerTop(cid string, args ...string) (*docker.APITop, error) {
 	val := url.Values{}
 	if len(args) > 1 {
 		val.Set("ps_args", strings.Join(args, " "))
@@ -297,7 +297,7 @@ func (c *Client) ContainerTop(cid string, args ...string) (*api.Top, error) {
 	if err != nil {
 		return nil, err
 	}
-	procs := api.Top{}
+	procs := docker.APITop{}
 	err = json.Unmarshal(body, &procs)
 	if err != nil {
 		return nil, err
@@ -305,13 +305,13 @@ func (c *Client) ContainerTop(cid string, args ...string) (*api.Top, error) {
     return &procs, nil
 }
 
-func (c *Client) ContainerDiff(cid string) ([]api.Change, error) {
+func (c *Client) ContainerDiff(cid string) ([]docker.Change, error) {
 	body, _, err := c.call("GET", "/containers/"+cid+"/changes", nil)
 	if err != nil {
 		return nil, err
 	}
 
-	changes := []api.Change{}
+	changes := []docker.Change{}
 	err = json.Unmarshal(body, &changes)
 	if err != nil {
 		return nil, err
@@ -324,7 +324,7 @@ func (c *Client) ContainerExport(cid string, out io.Writer) error {
 	return c.stream("GET", "/containers/"+cid+"/export", nil, out)
 }
 
-func (c *Client) ContainerStart(cid string, config *api.HostConfig) error {
+func (c *Client) ContainerStart(cid string, config *docker.HostConfig) error {
     _, _, err := c.call("POST", "/containers/"+cid+"/start", config)
     return err
 }
@@ -389,7 +389,7 @@ func (c *Client) ContainerWait(cid string) (int, error) {
         return -1, err
     }
 
-    var out api.Wait
+    var out docker.APIWait
     err = json.Unmarshal(body, &out)
     if err != nil {
         return -1, err
@@ -409,7 +409,7 @@ func (c *Client) ContainerRemove(cid string, volumes bool) error {
 }
 
 func (c *Client) ContainerCopy(cid, resource string) ([]byte, error) {
-    copyData := api.Copy{
+    copyData := docker.APICopy{
         Resource: resource,
     }
 
@@ -421,7 +421,7 @@ func (c *Client) ContainerCopy(cid, resource string) ([]byte, error) {
 	return data, nil
 }
 
-func (c *Client) ImageList(all bool, filter string) ([]api.Images, error) {
+func (c *Client) ImageList(all bool, filter string) ([]docker.APIImages, error) {
     v := url.Values{}
     if filter != "" {
         v.Set("filter", filter)
@@ -434,7 +434,7 @@ func (c *Client) ImageList(all bool, filter string) ([]api.Images, error) {
         return nil, err
     }
 
-    var outs []api.Images
+    var outs []docker.APIImages
     err = json.Unmarshal(body, &outs)
     if err != nil {
         return nil, err
@@ -482,13 +482,13 @@ func (c *Client) ImageInsert(name, u, path string, reader JSONReader) error {
 	return c.streamJSON("POST", "/images/"+name+"/insert?"+v.Encode(), nil, reader)
 }
 
-func (c *Client) ImageInspect(name string) (*api.Image, error) {
+func (c *Client) ImageInspect(name string) (*docker.Image, error) {
     body, _, err := c.call("GET", "/images/"+name+"/json", nil)
     if err != nil {
         return nil, err
     }
 
-	img := &api.Image{}
+	img := &docker.Image{}
 	err = json.Unmarshal(body, img)
 	if err != nil {
 		return nil, err
@@ -497,12 +497,12 @@ func (c *Client) ImageInspect(name string) (*api.Image, error) {
     return img, nil
 }
 
-func (c *Client) ImageHistory(name string) ([]api.History, error) {
+func (c *Client) ImageHistory(name string) ([]docker.APIHistory, error) {
 	body, _, err := c.call("GET", "/images/"+name+"/history", nil)
 	if err != nil {
 		return nil, err
 	}
-	var outs []api.History
+	var outs []docker.APIHistory
 	err = json.Unmarshal(body, &outs)
 	if err != nil {
 		return nil, err
@@ -562,9 +562,9 @@ func (c *Client) ImageTag(name, repo, tag string, force bool) error {
     return err
 }
 
-func (c *Client) ImageRemove(name string) ([]api.Rmi, error) {
+func (c *Client) ImageRemove(name string) ([]docker.APIRmi, error) {
     body, _, err := c.call("DELETE", "/images/"+name, nil)
-    var outs []api.Rmi
+    var outs []docker.APIRmi
     err = json.Unmarshal(body, &outs)
     if err != nil {
         return nil, err
@@ -573,7 +573,7 @@ func (c *Client) ImageRemove(name string) ([]api.Rmi, error) {
     return outs, nil
 }
 
-func (c *Client) ImageSearch(term string) ([]api.Search, error) {
+func (c *Client) ImageSearch(term string) ([]docker.APISearch, error) {
 	v := url.Values{}
 	v.Set("term", term)
 	body, _, err := c.call("GET", "/images/search?"+v.Encode(), nil)
@@ -581,7 +581,7 @@ func (c *Client) ImageSearch(term string) ([]api.Search, error) {
 		return nil, err
 	}
 
-	outs := []api.Search{}
+	outs := []docker.APISearch{}
 	err = json.Unmarshal(body, &outs)
 	if err != nil {
 		return nil, err
@@ -600,7 +600,7 @@ func (c *Client) ContainerResize(cid string, width, height int) error {
 }
 
 func (c *Client) newRequest(method, path string, body io.Reader) (*http.Request, error) {
-    path = fmt.Sprintf("/v%g%s", api.VERSION, path)
+    path = fmt.Sprintf("/v%g%s", docker.APIVERSION, path)
 	req, err := http.NewRequest(method, path, body)
 	if err != nil {
 		return nil, err
@@ -666,7 +666,7 @@ func (c *Client) streamJSON(method, path string, in io.Reader, jsonReader JSONRe
         dec := json.NewDecoder(r)
 
         for {
-            mes := &api.JSONMessage{}
+            mes := &utils.JSONMessage{}
 
             if err := dec.Decode(mes); err == io.EOF {
                 break

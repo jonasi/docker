@@ -1,7 +1,7 @@
 package docker
 
 import (
-	"github.com/dotcloud/docker/api"
+	"github.com/dotcloud/docker/utils"
 	"strings"
 	"testing"
 	"time"
@@ -192,7 +192,7 @@ func TestRunWithTooLowMemoryLimit(t *testing.T) {
 	defer nuke(runtime)
 	// Try to create a container with a memory limit of 1 byte less than the minimum allowed limit.
 	_, err = srv.ContainerCreate(
-		&api.Config{
+		&Config{
 			Image:     GetTestImage(runtime).ID,
 			Memory:    524287,
 			CpuShares: 1000,
@@ -313,13 +313,13 @@ func TestLogEvent(t *testing.T) {
 	runtime := mkRuntime(t)
 	srv := &Server{
 		runtime:   runtime,
-		events:    make([]api.JSONMessage, 0, 64),
-		listeners: make(map[string]chan api.JSONMessage),
+		events:    make([]utils.JSONMessage, 0, 64),
+		listeners: make(map[string]chan utils.JSONMessage),
 	}
 
 	srv.LogEvent("fakeaction", "fakeid")
 
-	listener := make(chan api.JSONMessage)
+	listener := make(chan utils.JSONMessage)
 	srv.Lock()
 	srv.listeners["test"] = listener
 	srv.Unlock()

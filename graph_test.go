@@ -4,7 +4,6 @@ import (
 	"archive/tar"
 	"bytes"
 	"errors"
-	"github.com/dotcloud/docker/api"
 	"github.com/dotcloud/docker/utils"
 	"io"
 	"io/ioutil"
@@ -35,11 +34,9 @@ func TestInterruptedRegister(t *testing.T) {
 	defer os.RemoveAll(graph.Root)
 	badArchive, w := io.Pipe() // Use a pipe reader as a fake archive which never yields data
 	image := &Image{
-		Image: &api.Image{
-			ID:      GenerateID(),
-			Comment: "testing",
-			Created: time.Now(),
-		},
+		ID:      GenerateID(),
+		Comment: "testing",
+		Created: time.Now(),
 	}
 	go graph.Register(nil, badArchive, image)
 	time.Sleep(200 * time.Millisecond)
@@ -94,11 +91,9 @@ func TestRegister(t *testing.T) {
 		t.Fatal(err)
 	}
 	image := &Image{
-		Image: &api.Image{
-			ID:      GenerateID(),
-			Comment: "testing",
-			Created: time.Now(),
-		},
+		ID:      GenerateID(),
+		Comment: "testing",
+		Created: time.Now(),
 	}
 	err = graph.Register(nil, archive, image)
 	if err != nil {

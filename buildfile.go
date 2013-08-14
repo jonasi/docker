@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
-	"github.com/dotcloud/docker/api"
 	"github.com/dotcloud/docker/utils"
 	"io"
 	"io/ioutil"
@@ -29,7 +28,7 @@ type buildFile struct {
 
 	image        string
 	maintainer   string
-	config       *api.Config
+	config       *Config
 	context      string
 	verbose      bool
 	utilizeCache bool
@@ -69,7 +68,7 @@ func (b *buildFile) CmdFrom(name string) error {
 		}
 	}
 	b.image = image.ID
-	b.config = &api.Config{}
+	b.config = &Config{}
 	if b.config.Env == nil || len(b.config.Env) == 0 {
 		b.config.Env = append(b.config.Env, "HOME=/", "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin")
 	}
@@ -375,7 +374,7 @@ func (b *buildFile) run() (string, error) {
 	c.Args = b.config.Cmd[1:]
 
 	//start the container
-	hostConfig := &api.HostConfig{}
+	hostConfig := &HostConfig{}
 	if err := c.Start(hostConfig); err != nil {
 		return "", err
 	}
@@ -518,7 +517,7 @@ func NewBuildFile(srv *Server, out io.Writer, verbose, utilizeCache bool) BuildF
 		builder:       NewBuilder(srv.runtime),
 		runtime:       srv.runtime,
 		srv:           srv,
-		config:        &api.Config{},
+		config:        &Config{},
 		out:           out,
 		tmpContainers: make(map[string]struct{}),
 		tmpImages:     make(map[string]struct{}),

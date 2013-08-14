@@ -5,7 +5,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
-	"github.com/dotcloud/docker/api"
+	"fmt"
 	"github.com/dotcloud/docker/utils"
 	"io"
 	"net"
@@ -13,9 +13,58 @@ import (
 	"net/http/httptest"
 	"os"
 	"path"
+	"strings"
 	"testing"
 	"time"
 )
+
+func closeWrap(args ...io.Closer) error {
+	e := false
+	ret := fmt.Errorf("Error closing elements")
+	for _, c := range args {
+		if err := c.Close(); err != nil {
+			e = true
+			ret = fmt.Errorf("%s\n%s", ret, err)
+		}
+	}
+	if e {
+		return ret
+	}
+	return nil
+}
+
+func setTimeout(t *testing.T, msg string, d time.Duration, f func()) {
+	c := make(chan bool)
+
+	// Make sure we are not too long
+	go func() {
+		time.Sleep(d)
+		c <- true
+	}()
+	go func() {
+		f()
+		c <- false
+	}()
+	if <-c && msg != "" {
+		t.Fatal(msg)
+	}
+}
+
+func assertPipe(input, output string, r io.Reader, w io.Writer, count int) error {
+	for i := 0; i < count; i++ {
+		if _, err := w.Write([]byte(input)); err != nil {
+			return err
+		}
+		o, err := bufio.NewReader(r).ReadString('\n')
+		if err != nil {
+			return err
+		}
+		if strings.Trim(o, " \r\n") != output {
+			return fmt.Errorf("Unexpected output. Expected [%s], received [%s]", output, o)
+		}
+	}
+	return nil
+}
 
 func TestGetBoolParam(t *testing.T) {
 	if ret, err := getBoolParam("true"); err != nil || !ret {
@@ -50,11 +99,11 @@ func TestGetVersion(t *testing.T) {
 
 	r := httptest.NewRecorder()
 
-	if err := getVersion(srv, api.VERSION, r, nil, nil); err != nil {
+	if err := getVersion(srv, APIVERSION, r, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 
-	v := &api.Version{}
+	v := &APIVersion{}
 	if err = json.Unmarshal(r.Body.Bytes(), v); err != nil {
 		t.Fatal(err)
 	}
@@ -76,11 +125,11 @@ func TestGetInfo(t *testing.T) {
 
 	r := httptest.NewRecorder()
 
-	if err := getInfo(srv, api.VERSION, r, nil, nil); err != nil {
+	if err := getInfo(srv, APIVERSION, r, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 
-	infos := &api.Info{}
+	infos := &APIInfo{}
 	err = json.Unmarshal(r.Body.Bytes(), infos)
 	if err != nil {
 		t.Fatal(err)
@@ -94,8 +143,8 @@ func TestGetEvents(t *testing.T) {
 	runtime := mkRuntime(t)
 	srv := &Server{
 		runtime:   runtime,
-		events:    make([]api.JSONMessage, 0, 64),
-		listeners: make(map[string]chan api.JSONMessage),
+		events:    make([]utils.JSONMessage, 0, 64),
+		listeners: make(map[string]chan utils.JSONMessage),
 	}
 
 	srv.LogEvent("fakeaction", "fakeid")
@@ -108,14 +157,14 @@ func TestGetEvents(t *testing.T) {
 
 	r := httptest.NewRecorder()
 	setTimeout(t, "", 500*time.Millisecond, func() {
-		if err := getEvents(srv, api.VERSION, r, req, nil); err != nil {
+		if err := getEvents(srv, APIVERSION, r, req, nil); err != nil {
 			t.Fatal(err)
 		}
 	})
 
 	dec := json.NewDecoder(r.Body)
 	for i := 0; i < 2; i++ {
-		var jm api.JSONMessage
+		var jm utils.JSONMessage
 		if err := dec.Decode(&jm); err == io.EOF {
 			break
 		} else if err != nil {
@@ -148,11 +197,11 @@ func TestGetImagesJSON(t *testing.T) {
 
 	r := httptest.NewRecorder()
 
-	if err := getImagesJSON(srv, api.VERSION, r, req, nil); err != nil {
+	if err := getImagesJSON(srv, APIVERSION, r, req, nil); err != nil {
 		t.Fatal(err)
 	}
 
-	images := []api.Images{}
+	images := []APIImages{}
 	if err := json.Unmarshal(r.Body.Bytes(), &images); err != nil {
 		t.Fatal(err)
 	}
@@ -186,11 +235,11 @@ func TestGetImagesJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := getImagesJSON(srv, api.VERSION, r2, req2, nil); err != nil {
+	if err := getImagesJSON(srv, APIVERSION, r2, req2, nil); err != nil {
 		t.Fatal(err)
 	}
 
-	images2 := []api.Images{}
+	images2 := []APIImages{}
 	if err := json.Unmarshal(r2.Body.Bytes(), &images2); err != nil {
 		t.Fatal(err)
 	}
@@ -218,11 +267,11 @@ func TestGetImagesJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := getImagesJSON(srv, api.VERSION, r3, req3, nil); err != nil {
+	if err := getImagesJSON(srv, APIVERSION, r3, req3, nil); err != nil {
 		t.Fatal(err)
 	}
 
-	images3 := []api.Images{}
+	images3 := []APIImages{}
 	if err := json.Unmarshal(r3.Body.Bytes(), &images3); err != nil {
 		t.Fatal(err)
 	}
@@ -239,7 +288,7 @@ func TestGetImagesJSON(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = getImagesJSON(srv, api.VERSION, r4, req4, nil)
+	err = getImagesJSON(srv, APIVERSION, r4, req4, nil)
 	if err == nil {
 		t.Fatalf("Error expected, received none")
 	}
@@ -257,7 +306,7 @@ func TestGetImagesViz(t *testing.T) {
 	srv := &Server{runtime: runtime}
 
 	r := httptest.NewRecorder()
-	if err := getImagesViz(srv, api.VERSION, r, nil, nil); err != nil {
+	if err := getImagesViz(srv, APIVERSION, r, nil, nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -283,11 +332,11 @@ func TestGetImagesHistory(t *testing.T) {
 
 	r := httptest.NewRecorder()
 
-	if err := getImagesHistory(srv, api.VERSION, r, nil, map[string]string{"name": unitTestImageName}); err != nil {
+	if err := getImagesHistory(srv, APIVERSION, r, nil, map[string]string{"name": unitTestImageName}); err != nil {
 		t.Fatal(err)
 	}
 
-	history := []api.History{}
+	history := []APIHistory{}
 	if err := json.Unmarshal(r.Body.Bytes(), &history); err != nil {
 		t.Fatal(err)
 	}
@@ -303,7 +352,7 @@ func TestGetImagesByName(t *testing.T) {
 	srv := &Server{runtime: runtime}
 
 	r := httptest.NewRecorder()
-	if err := getImagesByName(srv, api.VERSION, r, nil, map[string]string{"name": unitTestImageName}); err != nil {
+	if err := getImagesByName(srv, APIVERSION, r, nil, map[string]string{"name": unitTestImageName}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -322,7 +371,7 @@ func TestGetContainersJSON(t *testing.T) {
 
 	srv := &Server{runtime: runtime}
 
-	container, err := NewBuilder(runtime).Create(&api.Config{
+	container, err := NewBuilder(runtime).Create(&Config{
 		Image: GetTestImage(runtime).ID,
 		Cmd:   []string{"echo", "test"},
 	})
@@ -337,10 +386,10 @@ func TestGetContainersJSON(t *testing.T) {
 	}
 
 	r := httptest.NewRecorder()
-	if err := getContainersJSON(srv, api.VERSION, r, req, nil); err != nil {
+	if err := getContainersJSON(srv, APIVERSION, r, req, nil); err != nil {
 		t.Fatal(err)
 	}
-	containers := []api.Containers{}
+	containers := []APIContainers{}
 	if err := json.Unmarshal(r.Body.Bytes(), &containers); err != nil {
 		t.Fatal(err)
 	}
@@ -362,7 +411,7 @@ func TestGetContainersExport(t *testing.T) {
 
 	// Create a container and remove a file
 	container, err := builder.Create(
-		&api.Config{
+		&Config{
 			Image: GetTestImage(runtime).ID,
 			Cmd:   []string{"touch", "/test"},
 		},
@@ -377,7 +426,7 @@ func TestGetContainersExport(t *testing.T) {
 	}
 
 	r := httptest.NewRecorder()
-	if err = getContainersExport(srv, api.VERSION, r, nil, map[string]string{"name": container.ID}); err != nil {
+	if err = getContainersExport(srv, APIVERSION, r, nil, map[string]string{"name": container.ID}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -414,7 +463,7 @@ func TestGetContainersChanges(t *testing.T) {
 
 	// Create a container and remove a file
 	container, err := builder.Create(
-		&api.Config{
+		&Config{
 			Image: GetTestImage(runtime).ID,
 			Cmd:   []string{"/bin/rm", "/etc/passwd"},
 		},
@@ -429,10 +478,10 @@ func TestGetContainersChanges(t *testing.T) {
 	}
 
 	r := httptest.NewRecorder()
-	if err := getContainersChanges(srv, api.VERSION, r, nil, map[string]string{"name": container.ID}); err != nil {
+	if err := getContainersChanges(srv, APIVERSION, r, nil, map[string]string{"name": container.ID}); err != nil {
 		t.Fatal(err)
 	}
-	changes := []api.Change{}
+	changes := []Change{}
 	if err := json.Unmarshal(r.Body.Bytes(), &changes); err != nil {
 		t.Fatal(err)
 	}
@@ -461,7 +510,7 @@ func TestGetContainersTop(t *testing.T) {
 	builder := NewBuilder(runtime)
 
 	container, err := builder.Create(
-		&api.Config{
+		&Config{
 			Image:     GetTestImage(runtime).ID,
 			Cmd:       []string{"/bin/sh", "-c", "cat"},
 			OpenStdin: true,
@@ -477,7 +526,7 @@ func TestGetContainersTop(t *testing.T) {
 		container.WaitTimeout(2 * time.Second)
 	}()
 
-	hostConfig := &api.HostConfig{}
+	hostConfig := &HostConfig{}
 	if err := container.Start(hostConfig); err != nil {
 		t.Fatal(err)
 	}
@@ -509,10 +558,10 @@ func TestGetContainersTop(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := getContainersTop(srv, api.VERSION, r, req, map[string]string{"name": container.ID}); err != nil {
+	if err := getContainersTop(srv, APIVERSION, r, req, map[string]string{"name": container.ID}); err != nil {
 		t.Fatal(err)
 	}
-	procs := api.Top{}
+	procs := APITop{}
 	if err := json.Unmarshal(r.Body.Bytes(), &procs); err != nil {
 		t.Fatal(err)
 	}
@@ -545,7 +594,7 @@ func TestGetContainersByName(t *testing.T) {
 
 	// Create a container and remove a file
 	container, err := builder.Create(
-		&api.Config{
+		&Config{
 			Image: GetTestImage(runtime).ID,
 			Cmd:   []string{"echo", "test"},
 		},
@@ -556,7 +605,7 @@ func TestGetContainersByName(t *testing.T) {
 	defer runtime.Destroy(container)
 
 	r := httptest.NewRecorder()
-	if err := getContainersByName(srv, api.VERSION, r, nil, map[string]string{"name": container.ID}); err != nil {
+	if err := getContainersByName(srv, APIVERSION, r, nil, map[string]string{"name": container.ID}); err != nil {
 		t.Fatal(err)
 	}
 	outContainer := &Container{}
@@ -578,7 +627,7 @@ func TestPostCommit(t *testing.T) {
 
 	// Create a container and remove a file
 	container, err := builder.Create(
-		&api.Config{
+		&Config{
 			Image: GetTestImage(runtime).ID,
 			Cmd:   []string{"touch", "/test"},
 		},
@@ -598,14 +647,14 @@ func TestPostCommit(t *testing.T) {
 	}
 
 	r := httptest.NewRecorder()
-	if err := postCommit(srv, api.VERSION, r, req, nil); err != nil {
+	if err := postCommit(srv, APIVERSION, r, req, nil); err != nil {
 		t.Fatal(err)
 	}
 	if r.Code != http.StatusCreated {
 		t.Fatalf("%d Created expected, received %d\n", http.StatusCreated, r.Code)
 	}
 
-	apiID := &api.ID{}
+	apiID := &APIID{}
 	if err := json.Unmarshal(r.Body.Bytes(), apiID); err != nil {
 		t.Fatal(err)
 	}
@@ -620,7 +669,7 @@ func TestPostContainersCreate(t *testing.T) {
 
 	srv := &Server{runtime: runtime}
 
-	configJSON, err := json.Marshal(&api.Config{
+	configJSON, err := json.Marshal(&Config{
 		Image:  GetTestImage(runtime).ID,
 		Memory: 33554432,
 		Cmd:    []string{"touch", "/test"},
@@ -635,14 +684,14 @@ func TestPostContainersCreate(t *testing.T) {
 	}
 
 	r := httptest.NewRecorder()
-	if err := postContainersCreate(srv, api.VERSION, r, req, nil); err != nil {
+	if err := postContainersCreate(srv, APIVERSION, r, req, nil); err != nil {
 		t.Fatal(err)
 	}
 	if r.Code != http.StatusCreated {
 		t.Fatalf("%d Created expected, received %d\n", http.StatusCreated, r.Code)
 	}
 
-	apiRun := &api.Run{}
+	apiRun := &APIRun{}
 	if err := json.Unmarshal(r.Body.Bytes(), apiRun); err != nil {
 		t.Fatal(err)
 	}
@@ -672,7 +721,7 @@ func TestPostContainersKill(t *testing.T) {
 	srv := &Server{runtime: runtime}
 
 	container, err := NewBuilder(runtime).Create(
-		&api.Config{
+		&Config{
 			Image:     GetTestImage(runtime).ID,
 			Cmd:       []string{"/bin/cat"},
 			OpenStdin: true,
@@ -683,7 +732,7 @@ func TestPostContainersKill(t *testing.T) {
 	}
 	defer runtime.Destroy(container)
 
-	hostConfig := &api.HostConfig{}
+	hostConfig := &HostConfig{}
 	if err := container.Start(hostConfig); err != nil {
 		t.Fatal(err)
 	}
@@ -696,7 +745,7 @@ func TestPostContainersKill(t *testing.T) {
 	}
 
 	r := httptest.NewRecorder()
-	if err := postContainersKill(srv, api.VERSION, r, nil, map[string]string{"name": container.ID}); err != nil {
+	if err := postContainersKill(srv, APIVERSION, r, nil, map[string]string{"name": container.ID}); err != nil {
 		t.Fatal(err)
 	}
 	if r.Code != http.StatusNoContent {
@@ -714,7 +763,7 @@ func TestPostContainersRestart(t *testing.T) {
 	srv := &Server{runtime: runtime}
 
 	container, err := NewBuilder(runtime).Create(
-		&api.Config{
+		&Config{
 			Image:     GetTestImage(runtime).ID,
 			Cmd:       []string{"/bin/cat"},
 			OpenStdin: true,
@@ -725,7 +774,7 @@ func TestPostContainersRestart(t *testing.T) {
 	}
 	defer runtime.Destroy(container)
 
-	hostConfig := &api.HostConfig{}
+	hostConfig := &HostConfig{}
 	if err := container.Start(hostConfig); err != nil {
 		t.Fatal(err)
 	}
@@ -742,7 +791,7 @@ func TestPostContainersRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := httptest.NewRecorder()
-	if err := postContainersRestart(srv, api.VERSION, r, req, map[string]string{"name": container.ID}); err != nil {
+	if err := postContainersRestart(srv, APIVERSION, r, req, map[string]string{"name": container.ID}); err != nil {
 		t.Fatal(err)
 	}
 	if r.Code != http.StatusNoContent {
@@ -768,7 +817,7 @@ func TestPostContainersStart(t *testing.T) {
 	srv := &Server{runtime: runtime}
 
 	container, err := NewBuilder(runtime).Create(
-		&api.Config{
+		&Config{
 			Image:     GetTestImage(runtime).ID,
 			Cmd:       []string{"/bin/cat"},
 			OpenStdin: true,
@@ -779,7 +828,7 @@ func TestPostContainersStart(t *testing.T) {
 	}
 	defer runtime.Destroy(container)
 
-	hostConfigJSON, err := json.Marshal(&api.HostConfig{})
+	hostConfigJSON, err := json.Marshal(&HostConfig{})
 
 	req, err := http.NewRequest("POST", "/containers/"+container.ID+"/start", bytes.NewReader(hostConfigJSON))
 	if err != nil {
@@ -787,7 +836,7 @@ func TestPostContainersStart(t *testing.T) {
 	}
 
 	r := httptest.NewRecorder()
-	if err := postContainersStart(srv, api.VERSION, r, req, map[string]string{"name": container.ID}); err != nil {
+	if err := postContainersStart(srv, APIVERSION, r, req, map[string]string{"name": container.ID}); err != nil {
 		t.Fatal(err)
 	}
 	if r.Code != http.StatusNoContent {
@@ -802,7 +851,7 @@ func TestPostContainersStart(t *testing.T) {
 	}
 
 	r = httptest.NewRecorder()
-	if err = postContainersStart(srv, api.VERSION, r, req, map[string]string{"name": container.ID}); err == nil {
+	if err = postContainersStart(srv, APIVERSION, r, req, map[string]string{"name": container.ID}); err == nil {
 		t.Fatalf("A running container should be able to be started")
 	}
 
@@ -818,7 +867,7 @@ func TestPostContainersStop(t *testing.T) {
 	srv := &Server{runtime: runtime}
 
 	container, err := NewBuilder(runtime).Create(
-		&api.Config{
+		&Config{
 			Image:     GetTestImage(runtime).ID,
 			Cmd:       []string{"/bin/cat"},
 			OpenStdin: true,
@@ -829,7 +878,7 @@ func TestPostContainersStop(t *testing.T) {
 	}
 	defer runtime.Destroy(container)
 
-	hostConfig := &api.HostConfig{}
+	hostConfig := &HostConfig{}
 	if err := container.Start(hostConfig); err != nil {
 		t.Fatal(err)
 	}
@@ -847,7 +896,7 @@ func TestPostContainersStop(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := httptest.NewRecorder()
-	if err := postContainersStop(srv, api.VERSION, r, req, map[string]string{"name": container.ID}); err != nil {
+	if err := postContainersStop(srv, APIVERSION, r, req, map[string]string{"name": container.ID}); err != nil {
 		t.Fatal(err)
 	}
 	if r.Code != http.StatusNoContent {
@@ -865,7 +914,7 @@ func TestPostContainersWait(t *testing.T) {
 	srv := &Server{runtime: runtime}
 
 	container, err := NewBuilder(runtime).Create(
-		&api.Config{
+		&Config{
 			Image:     GetTestImage(runtime).ID,
 			Cmd:       []string{"/bin/sleep", "1"},
 			OpenStdin: true,
@@ -876,17 +925,17 @@ func TestPostContainersWait(t *testing.T) {
 	}
 	defer runtime.Destroy(container)
 
-	hostConfig := &api.HostConfig{}
+	hostConfig := &HostConfig{}
 	if err := container.Start(hostConfig); err != nil {
 		t.Fatal(err)
 	}
 
 	setTimeout(t, "Wait timed out", 3*time.Second, func() {
 		r := httptest.NewRecorder()
-		if err := postContainersWait(srv, api.VERSION, r, nil, map[string]string{"name": container.ID}); err != nil {
+		if err := postContainersWait(srv, APIVERSION, r, nil, map[string]string{"name": container.ID}); err != nil {
 			t.Fatal(err)
 		}
-		apiWait := &api.Wait{}
+		apiWait := &APIWait{}
 		if err := json.Unmarshal(r.Body.Bytes(), apiWait); err != nil {
 			t.Fatal(err)
 		}
@@ -907,7 +956,7 @@ func TestPostContainersAttach(t *testing.T) {
 	srv := &Server{runtime: runtime}
 
 	container, err := NewBuilder(runtime).Create(
-		&api.Config{
+		&Config{
 			Image:     GetTestImage(runtime).ID,
 			Cmd:       []string{"/bin/cat"},
 			OpenStdin: true,
@@ -919,7 +968,7 @@ func TestPostContainersAttach(t *testing.T) {
 	defer runtime.Destroy(container)
 
 	// Start the process
-	hostConfig := &api.HostConfig{}
+	hostConfig := &HostConfig{}
 	if err := container.Start(hostConfig); err != nil {
 		t.Fatal(err)
 	}
@@ -949,7 +998,7 @@ func TestPostContainersAttach(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		if err := postContainersAttach(srv, api.VERSION, r, req, map[string]string{"name": container.ID}); err != nil {
+		if err := postContainersAttach(srv, APIVERSION, r, req, map[string]string{"name": container.ID}); err != nil {
 			t.Fatal(err)
 		}
 	}()
@@ -998,7 +1047,7 @@ func TestDeleteContainers(t *testing.T) {
 
 	srv := &Server{runtime: runtime}
 
-	container, err := NewBuilder(runtime).Create(&api.Config{
+	container, err := NewBuilder(runtime).Create(&Config{
 		Image: GetTestImage(runtime).ID,
 		Cmd:   []string{"touch", "/test"},
 	})
@@ -1016,7 +1065,7 @@ func TestDeleteContainers(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := httptest.NewRecorder()
-	if err := deleteContainers(srv, api.VERSION, r, req, map[string]string{"name": container.ID}); err != nil {
+	if err := deleteContainers(srv, APIVERSION, r, req, map[string]string{"name": container.ID}); err != nil {
 		t.Fatal(err)
 	}
 	if r.Code != http.StatusNoContent {
@@ -1123,7 +1172,7 @@ func TestDeleteImages(t *testing.T) {
 	}
 
 	r := httptest.NewRecorder()
-	if err := deleteImages(srv, api.VERSION, r, req, map[string]string{"name": unitTestImageID}); err == nil {
+	if err := deleteImages(srv, APIVERSION, r, req, map[string]string{"name": unitTestImageID}); err == nil {
 		t.Fatalf("Expected conflict error, got none")
 	}
 
@@ -1133,14 +1182,14 @@ func TestDeleteImages(t *testing.T) {
 	}
 
 	r2 := httptest.NewRecorder()
-	if err := deleteImages(srv, api.VERSION, r2, req2, map[string]string{"name": "test:test"}); err != nil {
+	if err := deleteImages(srv, APIVERSION, r2, req2, map[string]string{"name": "test:test"}); err != nil {
 		t.Fatal(err)
 	}
 	if r2.Code != http.StatusOK {
 		t.Fatalf("%d OK expected, received %d\n", http.StatusOK, r.Code)
 	}
 
-	var outs []api.Rmi
+	var outs []APIRmi
 	if err := json.Unmarshal(r2.Body.Bytes(), &outs); err != nil {
 		t.Fatal(err)
 	}
@@ -1189,7 +1238,7 @@ func TestPostContainersCopy(t *testing.T) {
 
 	// Create a container and remove a file
 	container, err := builder.Create(
-		&api.Config{
+		&Config{
 			Image: GetTestImage(runtime).ID,
 			Cmd:   []string{"touch", "/test.txt"},
 		},
@@ -1204,7 +1253,7 @@ func TestPostContainersCopy(t *testing.T) {
 	}
 
 	r := httptest.NewRecorder()
-	copyData := api.Copy{Resource: "/test.txt"}
+	copyData := APICopy{Resource: "/test.txt"}
 
 	jsonData, err := json.Marshal(copyData)
 	if err != nil {
@@ -1216,7 +1265,7 @@ func TestPostContainersCopy(t *testing.T) {
 		t.Fatal(err)
 	}
 	req.Header.Add("Content-Type", "application/json")
-	if err = postContainersCopy(srv, api.VERSION, r, req, map[string]string{"name": container.ID}); err != nil {
+	if err = postContainersCopy(srv, APIVERSION, r, req, map[string]string{"name": container.ID}); err != nil {
 		t.Fatal(err)
 	}
 

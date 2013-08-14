@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-    "github.com/dotcloud/docker/api"
 	"index/suffixarray"
 	"io"
 	"io/ioutil"
@@ -613,11 +612,57 @@ func NewWriteFlusher(w io.Writer) *WriteFlusher {
 	return &WriteFlusher{w: w, flusher: flusher}
 }
 
-func JSONMessageStreamFormatter(out io.Writer) func(*api.JSONMessage) error {
+type JSONError struct {
+	Code    int    `json:"code,omitempty"`
+	Message string `json:"message,omitempty"`
+}
+
+type JSONMessage struct {
+	Status       string     `json:"status,omitempty"`
+	Progress     string     `json:"progress,omitempty"`
+	ErrorMessage string     `json:"error,omitempty"` //deprecated
+	ID           string     `json:"id,omitempty"`
+	Time         int64      `json:"time,omitempty"`
+	Error        *JSONError `json:"errorDetail,omitempty"`
+}
+
+func (e *JSONError) Error() string {
+	return e.Message
+}
+
+func NewHTTPRequestError(msg string, res *http.Response) error {
+	return &JSONError{
+		Message: msg,
+		Code:    res.StatusCode,
+	}
+}
+
+func (jm *JSONMessage) Display(out io.Writer) error {
+	if jm.Error != nil {
+		if jm.Error.Code == 401 {
+			return fmt.Errorf("Authentication is required.")
+		}
+		return jm.Error
+	}
+	if jm.Time != 0 {
+		fmt.Fprintf(out, "[%s] ", time.Unix(jm.Time, 0))
+	}
+	if jm.ID != "" {
+		fmt.Fprintf(out, "%s: ", jm.ID)
+	}
+	if jm.Progress != "" {
+		fmt.Fprintf(out, "%c[2K", 27)
+		fmt.Fprintf(out, "%s %s\r", jm.Status, jm.Progress)
+	} else {
+		fmt.Fprintf(out, "%s\r\n", jm.Status)
+	}
+	return nil
+}
+func JSONMessageStreamFormatter(out io.Writer) func(*JSONMessage) error {
 	ids := make(map[string]int)
 	diff := 0
 
-    return func(jm *api.JSONMessage) error {
+    return func(jm *JSONMessage) error {
 		if jm.Progress != "" && jm.ID != "" {
 			line, ok := ids[jm.ID]
 			if !ok {
@@ -655,7 +700,7 @@ func (sf *StreamFormatter) FormatStatus(id, format string, a ...interface{}) []b
 	sf.used = true
 	str := fmt.Sprintf(format, a...)
 	if sf.json {
-		b, err := json.Marshal(&api.JSONMessage{ID: id, Status: str})
+		b, err := json.Marshal(&JSONMessage{ID: id, Status: str})
 		if err != nil {
 			return sf.FormatError(err)
 		}
@@ -667,11 +712,11 @@ func (sf *StreamFormatter) FormatStatus(id, format string, a ...interface{}) []b
 func (sf *StreamFormatter) FormatError(err error) []byte {
 	sf.used = true
 	if sf.json {
-		jsonError, ok := err.(*api.JSONError)
+		jsonError, ok := err.(*JSONError)
 		if !ok {
-			jsonError = &api.JSONError{Message: err.Error()}
+			jsonError = &JSONError{Message: err.Error()}
 		}
-		if b, err := json.Marshal(&api.JSONMessage{Error: jsonError, ErrorMessage: err.Error()}); err == nil {
+		if b, err := json.Marshal(&JSONMessage{Error: jsonError, ErrorMessage: err.Error()}); err == nil {
 			return b
 		}
 		return []byte("{\"error\":\"format error\"}")
@@ -682,7 +727,7 @@ func (sf *StreamFormatter) FormatError(err error) []byte {
 func (sf *StreamFormatter) FormatProgress(id, action, progress string) []byte {
 	sf.used = true
 	if sf.json {
-		b, err := json.Marshal(&api.JSONMessage{Status: action, Progress: progress, ID: id})
+		b, err := json.Marshal(&JSONMessage{Status: action, Progress: progress, ID: id})
 		if err != nil {
 			return nil
 		}

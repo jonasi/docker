@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"github.com/dotcloud/docker/api"
 	"github.com/dotcloud/docker/utils"
 	"io"
 	"io/ioutil"
@@ -20,8 +19,18 @@ import (
 )
 
 type Image struct {
-	*api.Image
-	graph *Graph
+	ID              string    `json:"id"`
+	Parent          string    `json:"parent,omitempty"`
+	Comment         string    `json:"comment,omitempty"`
+	Created         time.Time `json:"created"`
+	Container       string    `json:"container,omitempty"`
+	ContainerConfig Config    `json:"container_config,omitempty"`
+	DockerVersion   string    `json:"docker_version,omitempty"`
+	Author          string    `json:"author,omitempty"`
+	Config          *Config   `json:"config,omitempty"`
+	Architecture    string    `json:"architecture,omitempty"`
+	graph           *Graph
+	Size            int64
 }
 
 func LoadImage(root string) (*Image, error) {
@@ -184,7 +193,7 @@ func (image *Image) Mount(root, rw string) error {
 	return nil
 }
 
-func (image *Image) Changes(rw string) ([]api.Change, error) {
+func (image *Image) Changes(rw string) ([]Change, error) {
 	layers, err := image.layers()
 	if err != nil {
 		return nil, err
