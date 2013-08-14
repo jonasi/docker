@@ -258,7 +258,7 @@ func tempGraph(t *testing.T) *Graph {
 	return graph
 }
 
-func testArchive(t *testing.T) Archive {
+func testArchive(t *testing.T) utils.Archive {
 	archive, err := fakeTar()
 	if err != nil {
 		t.Fatal(err)
